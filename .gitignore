@@ -1,0 +1,14 @@
+# Build output (regenerate with `make build`)
+/bin/
+# Marp deck render output
+deck.html
+# Go
+*.test
+*.out
+# Local Claude Code settings (personal, not shared)
+.claude/settings.local.json
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~

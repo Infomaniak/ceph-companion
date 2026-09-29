@@ -1,0 +1,22 @@
+# BlueStore slow op counters (queried from Prometheus, scoped to the target OSD)
+name: bluestore_slow_ops
+source: prometheus
+patterns:
+  - "bluestore.slow_aio_wait_count > 0"
+  - "bluestore.slow_committed_kv_count > 0"
+  - "bluestore.slow_read_onode_meta_count > 0"
+  - "bluestore.slow_read_wait_aio_count > 0"
+  - "osd-slow-ops.slow_ops_count > 0"
+  - "bluestore.state_done_lat.avgtime > 0.05"
+  - "bluestore.read_lat.avgtime > 0.020"
+  - "bluestore.read_wait_aio_lat.avgtime > 0.015"
+  - "bluestore.txc_commit_lat.avgtime > 0.010"
+  - "bluestore.state_deferred_queued_lat.avgtime > 0.5"
+
+findings:
+  - Slow Bluestore Ops trigger Warnings (ceph config get osd bluestore_log_op_age, default=5s)
+  - state_done_lat = end-to-end operation completion time.
+  - read_lat = read latency at the BlueStore layer (typical loaded HDD is ~12ms).
+  - read_wait_aio_lat = waiting for AIO completion (evidence of storage-side latency).
+  - txc_commit_lat = commit latency for transactions
+  - state_deferred_queued_lat = deferred writes waiting on the backend. (can be the main cause of OSD slow op alerts if this latency value is way higher than other values).

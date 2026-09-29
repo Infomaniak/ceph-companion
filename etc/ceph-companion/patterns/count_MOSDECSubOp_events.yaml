@@ -1,0 +1,9 @@
+# Count of MOSDECSubOpWrite events
+name: count_MOSDECSubOp_events
+source: osd_historic_ops
+patterns:
+  - "count(events, 'MOSDECSubOpWrite') > 10"
+findings:
+  - "Found {count(events, 'MOSDECSubOpWrite')} MOSDECSubOpWrite operations"
+  - "This exceeds the 10-operation threshold — may indicate heavy write load"
+  - "Check if this is expected or if there's a client misbehaving"

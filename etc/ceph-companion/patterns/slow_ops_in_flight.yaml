@@ -1,0 +1,9 @@
+# Slow operations in flight
+name: slow_ops_in_flight
+source: osd_ops_in_flight
+patterns:
+  - "count(events) > 5"
+  - "TOP(5, ops)"
+findings:
+  - "Found {count(events)} slow ops in flight"
+  - "Top slow operations identified"

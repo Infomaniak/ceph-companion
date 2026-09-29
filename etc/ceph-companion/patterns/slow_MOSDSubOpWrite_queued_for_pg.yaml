@@ -1,0 +1,16 @@
+# Slow MOSDECSubOpWrite queued_for_pg event
+name: slow_MOSDSubOpWrite_queued_for_pg
+source: osd_historic_ops
+patterns:
+  - "event_duration('queued_for_pg', 'MOSDECSubOpWrite') > 0.200"
+findings:
+  - "MOSDSubOpWrite is a low-level sub-operation during replication, scrub, or recovery"
+  - "Triggered internally beyond the standard write pipeline"
+  - "Slow MOSDSubOpWrite often indicates PG recovery/backfill overlap with live I/O"
+  - "The queued_for_pg event duration is the time an operation waits in the PG queue before the PG becomes available to process it."
+  - "In a hybrid NVMe/HDD RGW cluster, this includes:"
+  - "   Waiting for PG metadata reads (even if metadata is on NVMe, PG table may still involve HDD I/O)"
+  - "   Lock contention if multiple operations target the same PG simultaneously"
+  - "   Delays caused by ongoing recovery, backfill, or scrub operations blocking the PG"
+  - "High latency could indicate PG queueing / HDD I/O latency"
+  - "If using HDDs, consider putting the OSDs down as an ultimate mitigation"

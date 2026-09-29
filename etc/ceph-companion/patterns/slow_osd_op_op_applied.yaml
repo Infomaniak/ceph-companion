@@ -1,0 +1,10 @@
+# Slow primary write path: osd_op op_applied event
+name: slow_osd_op_op_applied
+source: osd_historic_ops
+patterns:
+  - "event_duration('osd_op', 'op_applied') > 0.040"
+findings:
+  - "Primary commit latency >40ms is excessive for a hybrid cluster"
+  - "Implies replica acks are delayed → slow replica OSDs or disk pressure"
+  - "Check network RTT: ceph daemon osd.X dump_ping"
+  - "Validate no single slow OSD is dragging the entire PG set"

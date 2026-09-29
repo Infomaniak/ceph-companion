@@ -1,0 +1,15 @@
+# Slow MOSDECSubOpWrite reached_pg event
+name: slow_MOSDECSubOpWrite_reached_pg
+source: osd_historic_ops
+patterns:
+  - "event_duration('reached_pg', 'MOSDECSubOpWrite') > 0.200"
+findings:
+  - "MOSDSubOpWrite is a low-level sub-operation during replication, scrub, or recovery"
+  - "Triggered internally beyond the standard write pipeline"
+  - "Slow MOSDSubOpWrite often indicates PG recovery/backfill overlap with live I/O"
+  - "The reached_pg event duration is time between queuing the sub-op and the PG being ready to apply it"
+  - "In a hybrid NVMe/HDD RGW cluster, this includes:"
+  - "   Reading PG state from HDD-backed pool (metadata on NVMe helps but PG table may touch HDD)"
+  - "   Any lock contention if multiple sub-ops target the same PG"
+  - "   Waiting for previous operations in PG queue to complete"
+  - "High latency could indicate PG queueing / HDD I/O latency"

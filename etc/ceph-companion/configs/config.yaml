@@ -1,0 +1,31 @@
+# Prometheus endpoint for this cluster's Ceph metrics.
+#
+# The endpoint may host metrics for several Ceph clusters - every query is
+# scoped to the configured cluster via cluster_id: the value carried by the
+# cluster label on ceph metrics, e.g. the cluster's fsid.
+prometheus:
+  # Any subpath in the URL is preserved - e.g. a VictoriaMetrics endpoint
+  # served under /prometheus: "https://host.example.com/prometheus".
+  url: "http://prometheus.example.com:9090"   # mandatory
+  cluster_id: "your-cluster-id"               # mandatory
+  cluster_label: "cluster"                    # optional - label carrying cluster_id (default "cluster"; set this if your exporter uses e.g. "ceph_cluster" or "job")
+  username: ""                                # optional - basic auth, for endpoints secured behind a reverse proxy
+  password: ""                                # optional
+
+# Thresholds live where they're used, not here:
+#   - `get osd-latency --alarm --threshold <ms>` / `get bluestore-slow-committed-kv-count --window <dur>`
+#   - each rule's own `threshold:` per condition (rules/*.yaml)
+# Conditions with no safe built-in threshold (osd_performance_drop,
+# pool_performance_drop, rgw_performance_drop) require it explicitly - the
+# operator refuses to run a rule that omits it.
+
+notifications:
+  channel: "ceph-companion-notifs"    # optional
+  username: "ceph-companion"          # optional
+  emoji: ":ceph:"                    # optional
+  webhook: "https://kchat.infomaniak.com/hooks/UUID"  # optional
+  # Execution errors (failed condition evaluations, failed actions, missing
+  # rules) go to a dedicated spam-tolerant channel; both keys fall back to
+  # channel/webhook above when unset.
+  error_channel: "ceph-companion-errors"  # optional
+  error_webhook: "https://kchat.infomaniak.com/hooks/UUID"  # optional

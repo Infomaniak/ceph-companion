@@ -1,0 +1,8 @@
+# List events analysis
+name: list_events
+source: osd_historic_ops
+patterns:
+  - "list_events()"
+findings:
+  - "Event types and subtypes analyzed"
+  - "Check the output for unusual event distribution"

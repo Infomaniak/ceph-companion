@@ -1,0 +1,29 @@
+name: scrub_write_blocked_rate
+description: |
+  Notify when client writes blocked by scrub exceed a per-OSD rate threshold.
+  Reads the osd_scrub_{dp,sh}_{ec,repl} write_blocked_by_scrub counters as an
+  increase over 10min, summed per OSD daemon. This rule takes no action.
+
+enabled: true
+
+conditions:
+  # threshold = blocked writes per OSD in the last 10 minutes
+  - command: prometheus_query
+    query: "sort_desc(topk(20, sum by (ceph_daemon) (increase(ceph_osd_scrub_dp_ec_write_blocked_by_scrub{cluster_selector}[10m]) or increase(ceph_osd_scrub_sh_ec_write_blocked_by_scrub{cluster_selector}[10m]) or increase(ceph_osd_scrub_dp_repl_write_blocked_by_scrub{cluster_selector}[10m]) or increase(ceph_osd_scrub_sh_repl_write_blocked_by_scrub{cluster_selector}[10m]))))"
+    operator: ">"
+    threshold: 100
+    entity_type: osd
+    entity_labels: ["ceph_daemon"]
+
+action:
+  type: ceph_cli
+  command: "true"
+  dry_run_text: "WOULD NOTIFY: {value} writes blocked by scrub in the last 10 minutes on {full_name}"
+  max_items_per_run: 1
+  send-notif: false
+  notif-message: |
+    **Scrub blocking client writes**
+
+    **Cluster:** {cluster}
+    **OSD:** {items}
+    **Blocked writes (10 minutes):** {value}

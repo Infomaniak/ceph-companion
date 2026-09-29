@@ -1,0 +1,10 @@
+# Slow OSD operation commit detection
+name: slow_osd_op_op_commit
+source: osd_historic_ops
+patterns:
+  - "event_duration('osd_op', 'op_commit') > 0.040"
+findings:
+  - "Primary apply >40ms means the primary OSD is slow to update metadata"
+  - "Common reasons: heavy OMAP load (RGW), RocksDB compaction, HDD saturation"
+  - "Check for high 'bluestore_kv_flush_latency' or 'bluestore_kv_sync_latency'"
+  - "If only one OSD is slow: investigate NVMe wear, saturation, or PCIe bottlenecks"

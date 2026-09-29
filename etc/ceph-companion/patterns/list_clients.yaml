@@ -1,0 +1,8 @@
+# List client connections
+name: list_clients
+source: osd_historic_ops
+patterns:
+  - "list_clients()"
+findings:
+  - "Client connections analyzed"
+  - "Check for unusual client activity patterns"

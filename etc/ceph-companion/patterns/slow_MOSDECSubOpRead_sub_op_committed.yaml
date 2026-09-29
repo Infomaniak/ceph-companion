@@ -1,0 +1,11 @@
+# Slow MOSDECSubOpRead sub_op_committed event
+name: slow_MOSDECSubOpRead_sub_op_committed
+source: osd_historic_ops
+patterns:
+  - "event_duration('sub_op_committed', 'MOSDECSubOpRead') > 0.100"
+findings:
+  - "MOSDSubOpRead is a low-level sub-operation during replication, scrub, or recovery"
+  - "Triggered internally beyond the standard Read pipeline"
+  - "Slow MOSDSubOpRead often indicates PG recovery/backfill overlap with live I/O"
+  - "Check recovery and backfill throttle settings if this is consistently slow"
+  - "Verify WAL/DB correctly placed on NVMe and not falling back to HDD"

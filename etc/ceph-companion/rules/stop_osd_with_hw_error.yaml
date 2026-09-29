@@ -1,0 +1,44 @@
+# Rule to stop OSD services when disk hardware errors are detected
+# and it's safe to stop the OSD. Also mutes PG_DEGRADED alerts.
+name: stop_osd_with_hw_error
+description: |
+  Stop OSD daemons when their underlying disk shows hardware errors in kernel logs.
+  Only checks rotational disks (HDD), ignores SSD/NVMe.
+
+enabled: true
+
+conditions:
+  - command: kernel_disk_errors
+    error_limit: 2
+    minutes: 1440
+    rotational_only: true
+
+  - command: osd_ok_to_stop
+
+# NOTE: the action block below is also in stop_sluggish_osd_service.yaml and
+# stop_osd_bluestore_slow_committed_kv_count.yaml. If you change the
+# stop/mute logic, keep all three in sync.
+action:
+  type: ceph_cli
+  command: |
+    cephadm shell ceph osd ok-to-stop osd.{id} && \
+    cephadm unit stop --name osd.{id} && \
+    cephadm shell ceph osd out osd.{id} && \
+    logger -t ceph-companion -p kern.warning "OSD osd.{id} stopped due to hardware errors detected by ceph-operator" && \
+    cephadm shell ceph health mute PG_DEGRADED 7d --sticky
+  dry_run_text: |
+    WOULD CHECK: cephadm shell ceph osd ok-to-stop osd.{id}
+    WOULD STOP: cephadm unit stop --name osd.{id}
+    WOULD OUT: cephadm shell ceph osd out osd.{id}
+    WOULD LOG: logger -t ceph-companion "OSD osd.{id} stopped due to hardware errors"
+    WOULD MUTE: cephadm shell ceph health mute PG_DEGRADED 7d --sticky
+  max_items_per_run: 1
+  send-notif: true
+  notif-message: |
+    **OSD Hardware Error - Action Taken**
+
+    **Host:** {host}
+    **OSD:** {items}
+
+    OSD stopped due to hardware errors detected on host.
+    PG_DEGRADED muted for 7 days.

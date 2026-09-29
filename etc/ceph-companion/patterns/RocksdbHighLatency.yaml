@@ -1,0 +1,10 @@
+# RocksDB high latency detection
+name: RocksdbHighLatency
+source: osd_perf_dump
+patterns:
+  - "rocksdb.submit_latency.avgtime > 0.001"
+  - "rocksdb.submit_latency.avgtime > 0.003"
+findings:
+  - "High RocksDB commit latency combined with many slow ops detected!"
+  - "This may indicate storage performance issues."
+  - "Check disk performance and consider tuning RocksDB settings"

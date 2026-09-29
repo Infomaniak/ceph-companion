@@ -1,0 +1,34 @@
+# Example only (disabled) - demonstrates the generic `prometheus_query`
+# condition, which lets you add a new metric-based check purely in YAML
+# instead of writing a Go eval function + registering it in engine.go.
+#
+# "{cluster_selector}" is replaced with a label matcher like "{cluster='id'}"
+# (using the configured cluster_id and cluster_label), and "{cluster_id}" with
+# the bare ID, so queries stay scoped to this cluster even when the endpoint
+# hosts metrics for several Ceph clusters.
+name: example_pg_recovery_backlog
+description: |
+  Notify when the number of PGs waiting on recovery exceeds a threshold.
+  Purely config-driven: no corresponding Go code exists for this metric.
+
+enabled: false
+
+conditions:
+  - command: prometheus_query
+    query: "sum(ceph_pg_recovering{cluster_selector})"
+    operator: ">"
+    threshold: 50
+    entity_type: cluster
+    entity_labels: ["cluster"]
+
+action:
+  type: ceph_cli
+  command: "true"
+  dry_run_text: "WOULD NOTIFY: {value} PGs recovering on {full_name}"
+  max_items_per_run: 1
+  send-notif: true
+  notif-message: |
+    **PG Recovery Backlog**
+
+    **Cluster:** {cluster}
+    Recovering PGs: {value}

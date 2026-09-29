@@ -1,0 +1,10 @@
+# High write operation latency
+name: HighWriteLatencyFinding
+source: osd_perf_dump
+patterns:
+  - "osd.op_w_latency.avgtime > 0.050"
+findings:
+  - "High write operation latency detected: {osd.op_w_latency.avgtime} seconds"
+  - "This exceeds the 50ms threshold — may indicate storage performance issues"
+  - "Check disk I/O with 'iostat -x 1' or 'ceph osd bench'"
+  - "On HDDs, latency >50ms is concerning; on SSDs, >10ms may need investigation"

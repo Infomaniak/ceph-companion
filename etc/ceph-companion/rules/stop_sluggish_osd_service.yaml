@@ -1,0 +1,49 @@
+# Sample rule - stop sluggish OSDs
+name: stop_sluggish_osd_service
+description: |
+  Stop OSD services when performance is degraded.
+  Only proceeds if ok-to-stop confirms it's safe.
+
+enabled: false
+
+conditions:
+  # Per-OSD checks, written as generic prometheus_query conditions - no Go
+  # code backs these, the query/operator/threshold come straight from YAML.
+  - command: prometheus_query
+    query: "topk(5, increase(ceph_bluestore_slow_committed_kv_count{cluster_selector}[2h]))"
+    operator: ">"
+    threshold: 1
+    entity_type: osd
+
+  # {cluster_selector} is automatically narrowed to the OSD(s) the condition
+  # above already flagged, so this only considers OSDs with both a slow-KV
+  # incident and high latency - not just the top-5 latency OSDs cluster-wide.
+  - command: prometheus_query
+    query: "topk(5, sort_desc(ceph_osd_apply_latency_ms{cluster_selector} + ceph_osd_commit_latency_ms{cluster_selector}))"
+    operator: ">"
+    threshold: 1500.0
+    entity_type: osd
+
+  # Cluster-wide gate: OR of two independent metric ratios (IOPS drop, BW
+  # drop), with no single OSD identity - kept as a dedicated Go function
+  # rather than forced into one PromQL string. It produces no items of its
+  # own, so the OSD found by the latency check above still carries through
+  # to the action below.
+  - command: osd_performance_drop
+    threshold: 30.0
+
+action:
+  type: ceph_cli
+  command: "cephadm shell ceph osd ok-to-stop osd.{id} && cephadm unit stop --name osd.{id}"
+  dry_run_text: |
+    WOULD CHECK: cephadm shell ceph osd ok-to-stop osd.{id}
+    WOULD STOP: {full_name} - performance degradation detected
+  max_items_per_run: 1
+  send-notif: true
+  notif-message: |
+    **OSD Performance Degradation - Action Taken**
+
+    **Host:** {host}
+    **OSD:** {items}
+
+    OSD stopped due to performance issues.

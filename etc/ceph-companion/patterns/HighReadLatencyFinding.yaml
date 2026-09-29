@@ -1,0 +1,10 @@
+# High read operation latency
+name: HighReadLatencyFinding
+source: osd_perf_dump
+patterns:
+  - "osd.op_r_latency.avgtime > 0.025"
+findings:
+  - "High read operation latency detected: {osd.op_r_latency.avgtime} seconds"
+  - "This exceeds the 25ms threshold — may indicate storage performance issues"
+  - "Check disk I/O with 'iostat -x 1' or 'ceph osd bench'"
+  - "On HDDs, latency >25ms is concerning; on SSDs, >3ms may need investigation"

@@ -1,0 +1,10 @@
+# Slow MOSDECOpWrite sub_op_committed event
+name: slow_MOSDECOpWrite_sub_op_committed
+source: osd_historic_ops
+patterns:
+  - "event_duration('sub_op_committed', 'MOSDECOpWrite') > 0.350"
+findings:
+  - "MOSDSubOpWrite is a low-level sub-operation during replication, scrub, or recovery"
+  - "Triggered internally beyond the standard write pipeline"
+  - "Slow MOSDSubOpWrite often indicates PG recovery/backfill overlap with live I/O"
+  - "Check recovery and backfill throttle settings if this is consistently slow"

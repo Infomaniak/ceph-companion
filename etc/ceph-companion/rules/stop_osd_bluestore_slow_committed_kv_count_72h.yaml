@@ -1,0 +1,53 @@
+# Stop OSD services when ceph_bluestore_slow_committed_kv_count > 0.
+# Indicates disk/hardware issues causing slow KV commits (>5s).
+name: stop_osd_bluestore_slow_committed_kv_count_72h
+description: |
+  Stop OSD when BlueStore KV commits are slow.
+  Only proceeds if ceph osd ok-to-stop confirms it's safe.
+
+enabled: true
+
+conditions:
+  # ceph_bluestore_slow_committed_kv_count is a cumulative counter ("Slow op
+  # count for committed kv"): increase() counts NEW slow-KV detections inside
+  # the window.
+  - command: prometheus_query
+    query: "topk(5, (increase(ceph_bluestore_slow_committed_kv_count{cluster_selector}[72h]) > 0))"
+    operator: ">"
+    threshold: 10
+    entity_type: osd
+
+  # SMART media errors on the OSD's HDD (SCSI error-log entries like
+  # "[4,9,0] Successfully reassigned", grown defect lists, ATA
+  # reallocated/pending/uncorrectable sectors). Only rotational devices are
+  # checked - the NVMe accelerator is skipped. Runs after the conditions
+  # above, so it only smart-scans OSDs already flagged as problematic.
+  - command: smart_media_errors
+    error_limit: 10
+
+  - command: osd_ok_to_stop
+
+action:
+  type: ceph_cli
+  command: |
+    cephadm shell ceph osd ok-to-stop osd.{id} && \
+    cephadm unit stop --name osd.{id} && \
+    cephadm shell ceph osd out osd.{id} && \
+    logger -t ceph-companion -p kern.warning "OSD osd.{id} stopped due to performance drop detected by ceph-operator" && \
+    cephadm shell ceph health mute PG_DEGRADED 7d --sticky
+  dry_run_text: |
+    WOULD CHECK: cephadm shell ceph osd ok-to-stop osd.{id}
+    WOULD STOP: {full_name} - slow BlueStore KV commits detected
+    WOULD OUT: cephadm shell ceph osd out osd.{id}
+    WOULD LOG: logger -t ceph-companion "OSD osd.{id} stopped due to performance drop"
+    WOULD MUTE: cephadm shell ceph health mute PG_DEGRADED 7d --sticky
+  max_items_per_run: 1
+  send-notif: true
+  notif-message: |
+    **OSD slow BlueStore KV commits - Action Taken**
+
+    **Host:** {host}
+    **OSD:** {items}
+
+    OSD stopped due to ceph_bluestore_slow_committed_kv_count threshold exceeded.
+    PG_DEGRADED muted for 7d.
