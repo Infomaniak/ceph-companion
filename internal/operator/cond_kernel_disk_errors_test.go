@@ -113,6 +113,62 @@ func TestProcessKernelLinesDirectKeywordAndSampleCap(t *testing.T) {
 	}
 }
 
+// nvmeMediumErrorKernelLog replays the journal shapes of a dying NVMe
+// namespace (cephosd-1, 2026-10-05): the block layer's "I/O Error
+// (sct 0x2 / sc 0x81)" and nvme core's "critical medium error", plus the
+// controller-level timeout noise ("nvme nvme0: ... timeout, aborting") that
+// names no namespace and must stay uncounted.
+const nvmeMediumErrorKernelLog = `Oct 05 19:59:02 cephosd-1 kernel: nvme0n1: I/O Cmd(0x2) @ LBA 4097259416, 8 blocks, I/O Error (sct 0x2 / sc 0x81) MORE DNR
+Oct 05 19:59:02 cephosd-1 kernel: critical medium error, dev nvme0n1, sector 4097259416 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 2
+Oct 05 19:59:38 cephosd-1 kernel: nvme nvme0: I/O 708 (I/O Cmd) QID 17 timeout, aborting
+Oct 05 19:59:38 cephosd-1 kernel: nvme nvme0: Abort status: 0x0
+`
+
+func TestProcessKernelLinesNVMeMediumErrors(t *testing.T) {
+	scan := processKernelLines(strings.Split(nvmeMediumErrorKernelLog, "\n"))
+
+	if scan.counts["nvme0n1"] != 2 {
+		t.Errorf("expected 2 hits for nvme0n1 (I/O Error + medium error lines), got %d", scan.counts["nvme0n1"])
+	}
+	if len(scan.samples["nvme0n1"]) != 2 {
+		t.Errorf("expected 2 samples for nvme0n1, got %v", scan.samples["nvme0n1"])
+	}
+	if !strings.Contains(scan.samples["nvme0n1"][0], "I/O Cmd(0x2)") ||
+		!strings.Contains(scan.samples["nvme0n1"][1], "critical medium error") {
+		t.Errorf("expected both error shapes as samples, got %v", scan.samples["nvme0n1"])
+	}
+	// Controller-level lines (nvme0, no namespace) are neither keyword hits
+	// nor attributable devices - they must not invent a "nvme0" device.
+	if len(scan.counts) != 1 {
+		t.Errorf("expected nvme0n1 to be the only counted device, got %v", scan.counts)
+	}
+}
+
+func TestProcessKernelLinesNVMePartitionNormalized(t *testing.T) {
+	// Errors on an NVMe partition must count against the namespace the
+	// attribution layer (lsblk, ceph device table) keys on.
+	scan := processKernelLines([]string{
+		"blk_update_request: I/O error, dev nvme0n1p2, sector 8",
+	})
+	if scan.counts["nvme0n1"] != 1 || len(scan.counts) != 1 {
+		t.Errorf("expected exactly 1 hit for nvme0n1, got %v", scan.counts)
+	}
+
+	// Same normalization through the context-attribution and ghost path: a
+	// zero-capacity probe of a partition lands in the namespace's phantom
+	// bucket.
+	scan = processKernelLines([]string{
+		"pvs: attempt to access beyond end of device",
+		"nvme0n1p2: rw=0, sector=2048, nr_sectors = 256 limit=0",
+	})
+	if scan.phantomCounts["nvme0n1"] != 1 || len(scan.phantomCounts) != 1 {
+		t.Errorf("expected exactly 1 phantom hit for nvme0n1, got %v", scan.phantomCounts)
+	}
+	if scan.counts["nvme0n1p2"] != 0 || scan.phantomCounts["nvme0n1p2"] != 0 {
+		t.Errorf("expected no bucket keyed on the partition name, got %v / %v", scan.counts, scan.phantomCounts)
+	}
+}
+
 // renamedDiskKernelLog is the incident log variant with a non-zero device
 // limit: "beyond end of device" against a device the kernel still sizes
 // counts as an error, unlike the limit=0 phantom probes. Used to verify the
@@ -425,6 +481,78 @@ func TestEvalKernelLogsRenamedDiskStillAttributed(t *testing.T) {
 	}
 	joined := strings.Join(result.Logs, "\n")
 	for _, want := range []string{"kernel error hit(s)", "via", "limit=247565", "osd.51"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("evidence logs should mention %q, got: %s", want, joined)
+		}
+	}
+}
+
+// TestEvalKernelLogsNVMeMediumErrorsStopOSD replays a dying NVMe namespace
+// end to end: both error line shapes count against nvme0n1, lsblk's serial
+// attributes it to the OSDs it accelerates, and the rule triggers - the
+// exact hole that let a medium-erroring nvme0n1 go unacted on
+// (cephosd-1, 2026-10-05) while the kernel logged it for hours.
+func TestEvalKernelLogsNVMeMediumErrorsStopOSD(t *testing.T) {
+	dir := t.TempDir()
+
+	journalctl := "#!/bin/sh\ncat <<'EOF'\n" + nvmeMediumErrorKernelLog + "EOF\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "journalctl"), []byte(journalctl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lsblk := `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "-J" ]; then
+    cat <<'EOF'
+{"blockdevices":[
+  {"name":"nvme0n1","serial":"TESTSER04","wwn":"0xe8238fa60000000f"}
+]}
+EOF
+    exit 0
+  fi
+done
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(dir, "lsblk"), []byte(lsblk), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An NVMe accelerator hosts the WAL/DB of several OSDs, so the device
+	// table maps it to more than one daemon - all of them are served by the
+	// failing medium.
+	cephadm := `#!/bin/sh
+cat <<'EOF'
+DEVICE                                DEV      DAEMONS
+MTFDKCC3T8TGP-1BK1DABYY_TESTSER04  nvme0n1  osd.23 osd.30
+EOF
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(dir, "cephadm"), []byte(cephadm), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cachePath := writeDeviceCacheFile(t, DeviceCache{})
+
+	eng := &Engine{CephClient: ceph.NewClient(), DeviceCachePath: cachePath}
+	minutes, limit := 1440, 2
+	cond := &RuleCondition{Minutes: &minutes, ErrorLimit: &limit, RotationalOnly: false}
+
+	result := eng.evalKernelLogs(nil, cond)
+
+	if !result.Triggered {
+		t.Fatalf("expected trigger for the medium-erroring NVMe, logs: %v", result.Logs)
+	}
+	ids := map[string]bool{}
+	for _, it := range result.Items {
+		ids[it.ID] = true
+		if it.KernelDevice != "nvme0n1" {
+			t.Errorf("expected KernelDevice nvme0n1, got %q", it.KernelDevice)
+		}
+	}
+	if len(result.Items) != 2 || !ids["23"] || !ids["30"] {
+		t.Errorf("expected osd.23 and osd.30 items (both WAL/DB tenants of the drive), got %v", result.Items)
+	}
+	joined := strings.Join(result.Logs, "\n")
+	for _, want := range []string{`2 kernel error hit(s) on "nvme0n1"`, "via lsblk-serial", "critical medium error", "I/O Cmd(0x2)"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("evidence logs should mention %q, got: %s", want, joined)
 		}

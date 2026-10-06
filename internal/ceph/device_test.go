@@ -65,7 +65,7 @@ UNRELATED_LINE_NO_OSD         sdz      mon.a
 	}
 }
 
-func TestRotationalBaseName(t *testing.T) {
+func TestBaseDeviceName(t *testing.T) {
 	tests := map[string]string{
 		"sda1":      "sda",
 		"sda":       "sda",
@@ -73,8 +73,8 @@ func TestRotationalBaseName(t *testing.T) {
 		"nvme0n1":   "nvme0n1",
 	}
 	for in, want := range tests {
-		if got := rotationalBaseName(in); got != want {
-			t.Errorf("rotationalBaseName(%q) = %q, want %q", in, got, want)
+		if got := BaseDeviceName(in); got != want {
+			t.Errorf("BaseDeviceName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -3,7 +3,8 @@
 name: stop_osd_with_hw_error
 description: |
   Stop OSD daemons when their underlying disk shows hardware errors in kernel logs.
-  Only checks rotational disks (HDD), ignores SSD/NVMe.
+  Covers SATA/SAS disks and NVMe namespaces (partition errors count against the
+  whole device). With rotational_only: true, flash (SSD/NVMe) hits are skipped.
 
 enabled: true
 

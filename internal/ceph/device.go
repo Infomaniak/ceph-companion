@@ -208,10 +208,10 @@ var (
 	trailingDigitsRe = regexp.MustCompile(`\d+$`)
 )
 
-// rotationalBaseName strips a partition suffix from a device name to get the
-// whole-disk name whose /sys/block/<name>/queue/rotational file to read
-// (e.g. "sda1" -> "sda", "nvme0n1p2" -> "nvme0n1").
-func rotationalBaseName(device string) string {
+// BaseDeviceName strips a partition suffix from a kernel device name to get
+// the whole-disk name (e.g. "sda1" -> "sda", "nvme0n1p2" -> "nvme0n1") -
+// the form attribution (lsblk/ceph device tables, /sys/block) keys on.
+func BaseDeviceName(device string) string {
 	if strings.HasPrefix(device, "nvme") {
 		if m := nvmeBaseRe.FindStringSubmatch(device); m != nil {
 			return m[1]
@@ -227,7 +227,7 @@ func rotationalBaseName(device string) string {
 // HDD (and let a hardware-error rule consider it) than to silently skip a
 // real disk error because of a sysfs read failure.
 func (c *Client) IsRotational(device string) bool {
-	base := rotationalBaseName(device)
+	base := BaseDeviceName(device)
 	data, err := os.ReadFile(fmt.Sprintf("/sys/block/%s/queue/rotational", base))
 	if err != nil {
 		return true
