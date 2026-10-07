@@ -6,7 +6,9 @@ import (
 
 // Command: osd_ok_to_stop. Given OSDs from a prior chained condition
 // (input_items), checks each is safe to stop and not already stopped.
-// Triggers only if all are safe.
+// Already-stopped OSDs are in the desired protective state: they are
+// neither actionable nor blockers, so the condition triggers when every
+// OSD that still runs is safe to stop.
 
 // evalOSDOkToStop checks if OSDs are safe to stop.
 func (e *Engine) evalOSDOkToStop(kwargs map[string]interface{}, cond *RuleCondition) *EvalResult {
@@ -41,12 +43,12 @@ func (e *Engine) evalOSDOkToStop(kwargs map[string]interface{}, cond *RuleCondit
 			continue
 		}
 		if stopped {
-			results = append(results, Item{
-				Type:       "osd",
-				ID:         osdID,
-				FullName:   fmt.Sprintf("osd.%s", osdID),
-				SafeToStop: false,
-			})
+			// Drop, don't list: counting it as "not safe" would veto the
+			// still-running OSDs sharing the same failing device forever -
+			// an NVMe accelerator hosts several OSDs and the rule stops
+			// one per run, so every run after the first would be blocked
+			// by the ones already down (observed: osd.45 blocked by three
+			// "already stopped" peers on cephosd-1, 2026-10-06).
 			logs = append(logs, fmt.Sprintf("osd.%s: already stopped", osdID))
 			continue
 		}

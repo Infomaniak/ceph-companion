@@ -20,9 +20,15 @@ var (
 	kernelErrorKeywords = []string{
 		"I/O error", "FAILED", "Sense Key", "beyond end of device",
 		"blk_update_request", "end_request", "Buffer I/O error",
+		"medium error",
 	}
-	sdDeviceRe  = regexp.MustCompile(`\b(sd[a-z]+)\b`)
-	sdDevLineRe = regexp.MustCompile(`^\s*(sd[a-z]+):`)
+	// kernelDeviceRe matches the kernel device names attribution keys on:
+	// SATA/SAS disks (sda, sdbb) and NVMe namespaces (nvme0n1) with their
+	// partitions (nvme0n1p2, normalized back to the namespace). Controller
+	// devices (nvme0) deliberately don't match: controller-level resets and
+	// command timeouts say nothing about any namespace's medium.
+	kernelDeviceRe  = regexp.MustCompile(`\b(?:sd[a-z]+|nvme\d+n\d+(?:p\d+)?)\b`)
+	kernelDevLineRe = regexp.MustCompile(`^\s*(sd[a-z]+|nvme\d+n\d+(?:p\d+)?):`)
 	// "attempt to access beyond end of device ... limit=0" means the kernel
 	// sees the device with zero capacity: the ghost gendisk of a removed,
 	// replaced or bus-dropped disk being probed by pvs, ceph-volume, udev,
@@ -35,6 +41,18 @@ var (
 	beyondEndRe  = regexp.MustCompile(`beyond end of device`)
 	ghostLimitRe = regexp.MustCompile(`limit=0\b`)
 )
+
+// devicesInLine returns the whole-disk names a kernel line names, with NVMe
+// partitions normalized to their namespace ("nvme0n1p2" -> "nvme0n1") - the
+// form lsblk, the ceph device table and the cache attribute OSDs by.
+func devicesInLine(line string) []string {
+	matches := kernelDeviceRe.FindAllString(line, -1)
+	devs := make([]string, 0, len(matches))
+	for _, m := range matches {
+		devs = append(devs, ceph.BaseDeviceName(m))
+	}
+	return devs
+}
 
 // isPhantomProbe reports whether the line itself reports a zero-capacity
 // device access (single-line form: device name and limit=0 on one line).
@@ -81,12 +99,12 @@ type kernelScan struct {
 }
 
 // scanKernelErrors runs journalctl over the last `minutes` and counts I/O
-// error keyword hits per kernel device name (e.g. "sda"), keeping a few raw
-// sample lines per device for journalled evidence. A hit also counts if the
-// device's own log line immediately follows an error line within the last
-// few lines of context (disk errors are often logged as a keyword line
-// followed by a "sdX: ..." detail line) - zero-capacity hits go to their
-// own bucket (see kernelScan).
+// error keyword hits per kernel device name (e.g. "sda", "nvme0n1"), keeping
+// a few raw sample lines per device for journalled evidence. A hit also
+// counts if the device's own log line immediately follows an error line
+// within the last few lines of context (disk errors are often logged as a
+// keyword line followed by a "sdX: ..." detail line) - zero-capacity hits go
+// to their own bucket (see kernelScan).
 func scanKernelErrors(minutes int) (*kernelScan, error) {
 	since := fmt.Sprintf("%d minutes ago", minutes)
 	output, err := ceph.ExecOutput("journalctl", "-k", "--since", since, "--no-pager")
@@ -103,7 +121,7 @@ func scanKernelErrors(minutes int) (*kernelScan, error) {
 // processKernelLines counts I/O-error keyword hits per kernel device and
 // collects up to maxSamplesPerDevice raw sample lines per device. Sample
 // lines are the raw journal lines (trimmed, truncated to maxSampleLen); for
-// context-attributed hits the keyword line is joined with the "sdX: ..."
+// context-attributed hits the keyword line is joined with the "<dev>: ..."
 // detail line, since the keyword line alone doesn't name the device (e.g.
 // "pvs: attempt to access beyond end of device" followed by "sdd: rw=0 ...").
 // Hits against zero-capacity devices (limit=0) go to the phantom buckets -
@@ -144,22 +162,22 @@ func processKernelLines(lines []string) *kernelScan {
 				target = scan.phantomCounts
 				sampleTarget = scan.phantomSamples
 			}
-			for _, dev := range sdDeviceRe.FindAllString(line, -1) {
+			for _, dev := range devicesInLine(line) {
 				target[dev]++
 				addSample(sampleTarget, dev, line)
 			}
 		}
 
-		if m := sdDevLineRe.FindStringSubmatch(line); m != nil {
-			dev := m[1]
+		if m := kernelDevLineRe.FindStringSubmatch(line); m != nil {
+			dev := ceph.BaseDeviceName(m[1])
 			if ghostLimitRe.MatchString(line) {
-				// A "sdX: ... limit=0" detail line is the bio_check_eod
+				// A "<dev>: ... limit=0" detail line is the bio_check_eod
 				// follow-up for a zero-capacity device: bucket it as a
 				// phantom hit when the preceding error line was a "beyond
 				// end of device" probe (any other keyword line naming the
 				// device directly was already counted in the block above).
 				for _, pl := range contextLines {
-					if !hasKernelErrorKeyword(pl) || slices.Contains(sdDeviceRe.FindAllString(pl, -1), dev) {
+					if !hasKernelErrorKeyword(pl) || slices.Contains(devicesInLine(pl), dev) {
 						continue
 					}
 					if beyondEndRe.MatchString(pl) {
@@ -173,7 +191,7 @@ func processKernelLines(lines []string) *kernelScan {
 					if !hasKernelErrorKeyword(pl) {
 						continue
 					}
-					if !slices.Contains(sdDeviceRe.FindAllString(pl, -1), dev) {
+					if !slices.Contains(devicesInLine(pl), dev) {
 						scan.counts[dev]++
 						addSample(scan.samples, dev, pl+" | "+line)
 					}
