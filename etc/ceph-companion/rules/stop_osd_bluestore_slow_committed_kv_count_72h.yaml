@@ -17,6 +17,8 @@ conditions:
     threshold: 10
     entity_type: osd
 
+  - command: osd_ok_to_stop
+
   # SMART media errors on the OSD's HDD (SCSI error-log entries like
   # "[4,9,0] Successfully reassigned", grown defect lists, ATA
   # reallocated/pending/uncorrectable sectors). Only rotational devices are
@@ -24,8 +26,6 @@ conditions:
   # above, so it only smart-scans OSDs already flagged as problematic.
   - command: smart_media_errors
     error_limit: 10
-
-  - command: osd_ok_to_stop
 
 action:
   type: ceph_cli

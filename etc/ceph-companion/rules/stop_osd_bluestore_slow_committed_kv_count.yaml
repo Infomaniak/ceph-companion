@@ -17,6 +17,8 @@ conditions:
     threshold: 2
     entity_type: osd
 
+  - command: osd_ok_to_stop
+
   # Cluster-wide gate (see stop_sluggish_osd_service.yaml for why this stays
   # a dedicated Go function). threshold is required - the original rule used
   # 0.2, which means "trigger on essentially any traffic dip" - almost
@@ -32,8 +34,6 @@ conditions:
   # above, so it only smart-scans OSDs already flagged as problematic.
   - command: smart_media_errors
     error_limit: 3
-
-  - command: osd_ok_to_stop
 
 action:
   type: ceph_cli
